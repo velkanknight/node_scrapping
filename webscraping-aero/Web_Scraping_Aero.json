@@ -1,0 +1,169 @@
+{
+  "name": "Web Scraping Aero",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "informations"
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        200,
+        0
+      ],
+      "id": "66543c12-79d2-41cc-addd-7e31d4e64d0e",
+      "name": "Supabase",
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "RIKAJHrMjG1ST6wH",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "3c236e5e-6042-4145-8022-6c23e2508de4",
+      "name": "When clicking ‘Test workflow’"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://webscraping-aero-production.up.railway.app/search-flights",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"client\": \"{{ $json.client }}\",\n  \"number\": \"{{ $json.number }}\",\n  \"textMessage\": \"Passagem mais em conta encontrada hoje. De {{ $json.origin }} para {{ $json.destination }} na data {{ $json.date }}\",\n  \"origin\": \"{{ $json.origin }}\",\n  \"destination\": \"{{ $json.destination }}\",\n  \"departureDate\": \"{{ $json.date }}\"\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        600,
+        40
+      ],
+      "id": "dddab55a-6ec5-4704-95e7-344c90f74cbe",
+      "name": "HTTP - Seats.aero"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        400,
+        0
+      ],
+      "id": "bfaf16d4-99ba-459e-87a2-5cbc782a49e6",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://evolution-api-production-fdbc.up.railway.app/message/sendText/Envio Simples",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apiKey",
+              "value": "FuizjGqZaveKwwPgnFcLxrHjIrywbKSX"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "=json",
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "jsonBody": "={\n  \"number\": \"5532984474066\",\n   \"text\": \"{{ $json.textMessage }}: {{ $json.results }}\"\n} ",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        40
+      ],
+      "id": "dd3e4376-7ed0-4ff7-8adb-f7e54a13c0f5",
+      "name": "Envia Mensagem (WhatsApp)"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Test workflow’": {
+      "main": [
+        [
+          {
+            "node": "Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Seats.aero": {
+      "main": [
+        [
+          {
+            "node": "Envia Mensagem (WhatsApp)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "HTTP - Seats.aero",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Envia Mensagem (WhatsApp)": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "9adc6683-bee5-461c-b014-22fb2dcda1ea",
+  "meta": {
+    "instanceId": "efa9d778e4d55b353f453b9d376d9a631f80672716f8065c1400485234f926dd"
+  },
+  "id": "3TaiRq34JPmBN1ml",
+  "tags": []
+}
