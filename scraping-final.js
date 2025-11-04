@@ -13,7 +13,7 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const scrapeFlights = async ({ origin, destination, departureDate }) => {
   // Inicializa o navegador Puppeteer com configurações específicas
   const browser = await puppeteer.launch({
-    headless: true, // Executa sem interface gráfica (invisível)
+    headless: true, // Executa em modo headless (sem interface gráfica)
     defaultViewport: null, // Usa viewport padrão
     args: ['--no-sandbox', '--disable-setuid-sandbox'], // Argumentos para ambiente Docker/Linux
   });
@@ -122,10 +122,36 @@ const scrapeFlights = async ({ origin, destination, departureDate }) => {
     }
 
     console.log('Tentando clicar no botão "Econômica"...');
-    // Procura e clica na coluna/aba de classe econômica nos resultados
-    const economySelector = 'th[aria-label*="Economy"] span';
-    await page.waitForSelector(economySelector, { timeout: 15000 });
-    await page.click(economySelector);
+    // Primeiro aguarda qualquer tabela aparecer
+    await page.waitForSelector('table', { timeout: 15000 });
+    console.log('Tabela encontrada, aguardando carregamento completo...');
+    await delay(5000);
+    
+    // Tenta diferentes seletores para encontrar o botão da classe econômica
+    const selectors = [
+      'table thead th:nth-child(6) span',
+      'th[aria-label*="Economy"] span',
+      'th[aria-label*="Econômica"] span'
+    ];
+    
+    let clicked = false;
+    for (const selector of selectors) {
+      try {
+        console.log(`Tentando seletor: ${selector}`);
+        await page.waitForSelector(selector, { timeout: 5000 });
+        await page.click(selector);
+        console.log(`Sucesso com seletor: ${selector}`);
+        clicked = true;
+        break;
+      } catch (error) {
+        console.log(`Falhou com seletor: ${selector}`);
+      }
+    }
+    
+    if (!clicked) {
+      throw new Error('Não foi possível encontrar o botão da classe econômica com nenhum seletor');
+    }
+    
     console.log('Botão "Econômica" clicado.');
     await delay(2000); // Aguarda 2 segundos após clicar na classe econômica
 
