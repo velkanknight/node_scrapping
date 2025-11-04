@@ -1,2 +1,2 @@
-# node_scrapping
-scrapping com nodejs
+# webscraping-aero
+Aplicação desenvolvida para raspagem de dados do site Seats.aero

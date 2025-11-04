@@ -1,0 +1,17 @@
+
+services:
+  webscraping-aero:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    
+    # Adicionar limites de recursos para evitar sobrecarga
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
