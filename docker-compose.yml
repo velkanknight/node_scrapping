@@ -3,7 +3,7 @@ services:
   webscraping-aero:
     build: .
     ports:
-      - "3001:3001"
+      - "3001:3000"
     environment:
       - NODE_ENV=production
       - PORT=3000
