@@ -8,6 +8,28 @@ puppeteer.use(StealthPlugin());
 // Função utilitária para criar delays/pausas no código
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Função alternativa para quando o Cloudflare bloqueia
+const getFlightDataAlternative = ({ origin, destination, departureDate }) => {
+  const [year, month, day] = departureDate.split('-');
+  const formattedDate = `${day}/${month}/${year}`;
+  
+  return {
+    result: [
+      `🔍 Busca realizada: ${origin} → ${destination} em ${formattedDate}`,
+      ``,
+      `⚠️ O site seats.aero está temporariamente bloqueando requisições automáticas.`,
+      ``,
+      `💡 Sugestões de sites alternativos para consulta:`,
+      `• Kayak: https://www.kayak.com/flights/${origin}-${destination}/${departureDate}`,
+      `• Google Flights: https://www.google.com/travel/flights/search?tfs=CBwQAhooagcIARIDR1JVEgoyMDI0LTEyLTE1cgcIARIDSkZL`,
+      `• Skyscanner: https://www.skyscanner.com/transport/flights/${origin}/${destination}/${departureDate.replace(/-/g, '')}`,
+      `• Momondo: https://www.momondo.com/flight-search/${origin}-${destination}/${departureDate}`,
+      ``,
+      `🔄 Tente novamente em alguns minutos. O bloqueio é temporário.`
+    ]
+  };
+};
+
 // Função principal para fazer web scraping de voos no site seats.aero
 // Recebe parâmetros: origem, destino e data de partida
 const scrapeFlights = async ({ origin, destination, departureDate }) => {
@@ -76,46 +98,29 @@ const scrapeFlights = async ({ origin, destination, departureDate }) => {
     // Navega para o site seats.aero e aguarda até a rede ficar inativa
     await page.goto('https://seats.aero/search', { 
       waitUntil: 'networkidle2',
-      timeout: 60000 // Aumenta timeout para 60 segundos
+      timeout: 30000 // Reduz timeout para 30 segundos
     });
 
     console.log('Aguardando carregamento inicial...');
-    await delay(10000); // Aguarda 10 segundos para bypass do Cloudflare
+    await delay(5000); // Reduz para 5 segundos
 
     // Verificar se a página carregou corretamente
     const pageTitle = await page.title();
     console.log(`Título da página: ${pageTitle}`);
     
-    // Se detectar Cloudflare, tentar aguardar mais tempo
+    // Se detectar Cloudflare, retornar dados alternativos imediatamente
     if (pageTitle.includes('Cloudflare') || pageTitle.includes('Attention Required')) {
-      console.log('Cloudflare detectado, aguardando bypass...');
-      
-      // Tentar aguardar até 30 segundos para o Cloudflare liberar
-      for (let i = 0; i < 6; i++) {
-        await delay(5000);
-        const newTitle = await page.title();
-        console.log(`Tentativa ${i + 1}: ${newTitle}`);
-        
-        if (!newTitle.includes('Cloudflare') && !newTitle.includes('Attention Required')) {
-          console.log('Cloudflare bypassado com sucesso!');
-          break;
-        }
-        
-        if (i === 5) {
-          // Se após 30 segundos ainda estiver bloqueado, retornar erro específico
-          return { 
-            result: 'Erro: Site bloqueado pelo Cloudflare. Tente novamente em alguns minutos.' 
-          };
-        }
-      }
+      console.log('Cloudflare detectado, retornando dados alternativos...');
+      await browser.close();
+      return getFlightDataAlternative({ origin, destination, departureDate });
     }
 
     console.log('Simulando comportamento humano...');
-    // Move o mouse para simular comportamento humano e evitar detecção de bot
+    // Move o mouse para simular comportamento humano
     await page.mouse.move(100, 100);
-    await delay(3000);
-    await page.mouse.move(200, 150);
     await delay(2000);
+    await page.mouse.move(200, 150);
+    await delay(1000);
 
     // Verifica se existe um captcha na página
     const captchaSelector = 'p#TBuuD2.h2.spacer-bottom';
@@ -130,49 +135,8 @@ const scrapeFlights = async ({ origin, destination, departureDate }) => {
     }
 
     console.log('Preenchendo campo de origem...');
-    // Aguarda o campo de origem aparecer na página com timeout maior
-    try {
-      await page.waitForSelector('input.vs__search[aria-labelledby="vs1__combobox"]', { timeout: 45000 });
-    } catch (error) {
-      // Se não encontrar o seletor, tenta um seletor alternativo
-      console.log('Seletor principal não encontrado, tentando alternativo...');
-      const alternativeSelectors = [
-        'input[placeholder*="origem"]',
-        'input[placeholder*="From"]',
-        '.vs__search',
-        'input[type="text"]',
-        '[data-testid*="origin"]',
-        '[data-testid*="from"]'
-      ];
-      
-      let found = false;
-      for (const selector of alternativeSelectors) {
-        try {
-          await page.waitForSelector(selector, { timeout: 5000 });
-          console.log(`Seletor alternativo encontrado: ${selector}`);
-          found = true;
-          break;
-        } catch (e) {
-          console.log(`Seletor ${selector} não encontrado`);
-        }
-      }
-      
-      if (!found) {
-        // Debug: verificar se ainda estamos na página do Cloudflare
-        const currentTitle = await page.title();
-        const currentUrl = await page.url();
-        console.log(`Título atual: ${currentTitle}`);
-        console.log(`URL atual: ${currentUrl}`);
-        
-        if (currentTitle.includes('Cloudflare') || currentTitle.includes('Attention Required')) {
-          return { 
-            result: 'Erro: Não foi possível contornar o Cloudflare. Tente novamente mais tarde.' 
-          };
-        }
-        
-        throw new Error('Nenhum campo de origem encontrado na página');
-      }
-    }
+    // Aguarda o campo de origem aparecer na página
+    await page.waitForSelector('input.vs__search[aria-labelledby="vs1__combobox"]', { timeout: 30000 });
     // Clica no campo de origem
     await page.click('input.vs__search[aria-labelledby="vs1__combobox"]');
     // Digita cada caractere da origem com delay para simular digitação humana
