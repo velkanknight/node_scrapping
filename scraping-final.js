@@ -11,26 +11,50 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // Função principal para fazer web scraping de voos no site seats.aero
 // Recebe parâmetros: origem, destino e data de partida
 const scrapeFlights = async ({ origin, destination, departureDate }) => {
-  // Inicializa o navegador Puppeteer com configurações específicas
+  // Inicializa o navegador Puppeteer com configurações específicas para AWS
   const browser = await puppeteer.launch({
     headless: true, // Executa em modo headless (sem interface gráfica)
     defaultViewport: null, // Usa viewport padrão
-    args: ['--no-sandbox', '--disable-setuid-sandbox'], // Argumentos para ambiente Docker/Linux
+    args: [
+      '--no-sandbox', 
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage', // Evita problemas de memória compartilhada
+      '--disable-gpu',
+      '--disable-web-security',
+      '--disable-features=VizDisplayCompositor',
+      '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    ],
   });
 
   // Cria uma nova aba/página no navegador
   const page = await browser.newPage();
 
   try {
+    // Configurar headers para parecer mais com um browser real
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    await page.setViewport({ width: 1366, height: 768 });
+    
     console.log('Acessando o site...');
     // Navega para o site seats.aero e aguarda até a rede ficar inativa
-    await page.goto('https://seats.aero/search', { waitUntil: 'networkidle2' });
+    await page.goto('https://seats.aero/search', { 
+      waitUntil: 'networkidle2',
+      timeout: 60000 // Aumenta timeout para 60 segundos
+    });
 
     console.log('Simulando comportamento humano...');
     // Move o mouse para simular comportamento humano e evitar detecção de bot
     await page.mouse.move(100, 100);
     // Aguarda 6 segundos para simular tempo de carregamento humano
     await delay(6000);
+
+    // Verificar se a página carregou corretamente
+    const pageTitle = await page.title();
+    console.log(`Título da página: ${pageTitle}`);
+    
+    // Se a página não carregou corretamente, retorna erro
+    if (!pageTitle || pageTitle.includes('Access Denied') || pageTitle.includes('Blocked')) {
+      throw new Error(`Página bloqueada ou não carregou corretamente. Título: ${pageTitle}`);
+    }
 
     // Verifica se existe um captcha na página
     const captchaSelector = 'p#TBuuD2.h2.spacer-bottom';
@@ -46,8 +70,38 @@ const scrapeFlights = async ({ origin, destination, departureDate }) => {
     }
 
     console.log('Preenchendo campo de origem...');
-    // Aguarda o campo de origem aparecer na página
-    await page.waitForSelector('input.vs__search[aria-labelledby="vs1__combobox"]');
+    // Aguarda o campo de origem aparecer na página com timeout maior
+    try {
+      await page.waitForSelector('input.vs__search[aria-labelledby="vs1__combobox"]', { timeout: 45000 });
+    } catch (error) {
+      // Se não encontrar o seletor, tenta um seletor alternativo
+      console.log('Seletor principal não encontrado, tentando alternativo...');
+      const alternativeSelectors = [
+        'input[placeholder*="origem"]',
+        'input[placeholder*="From"]',
+        '.vs__search',
+        'input[type="text"]'
+      ];
+      
+      let found = false;
+      for (const selector of alternativeSelectors) {
+        try {
+          await page.waitForSelector(selector, { timeout: 5000 });
+          console.log(`Seletor alternativo encontrado: ${selector}`);
+          found = true;
+          break;
+        } catch (e) {
+          console.log(`Seletor ${selector} não encontrado`);
+        }
+      }
+      
+      if (!found) {
+        // Debug: capturar screenshot e HTML para análise
+        const html = await page.content();
+        console.log('HTML da página:', html.substring(0, 1000));
+        throw new Error('Nenhum campo de origem encontrado na página');
+      }
+    }
     // Clica no campo de origem
     await page.click('input.vs__search[aria-labelledby="vs1__combobox"]');
     // Digita cada caractere da origem com delay para simular digitação humana
