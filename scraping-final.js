@@ -11,17 +11,23 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // Função principal para fazer web scraping de voos no site seats.aero
 // Recebe parâmetros: origem, destino e data de partida
 const scrapeFlights = async ({ origin, destination, departureDate }) => {
-  // Inicializa o navegador Puppeteer com configurações específicas para AWS
+  // Inicializa o navegador Puppeteer com configurações específicas para contornar Cloudflare
   const browser = await puppeteer.launch({
     headless: true, // Executa em modo headless (sem interface gráfica)
     defaultViewport: null, // Usa viewport padrão
     args: [
       '--no-sandbox', 
       '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage', // Evita problemas de memória compartilhada
+      '--disable-dev-shm-usage',
       '--disable-gpu',
       '--disable-web-security',
       '--disable-features=VizDisplayCompositor',
+      '--disable-blink-features=AutomationControlled',
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--disable-extensions',
+      '--disable-plugins',
+      '--disable-default-apps',
       '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     ],
   });
@@ -30,9 +36,41 @@ const scrapeFlights = async ({ origin, destination, departureDate }) => {
   const page = await browser.newPage();
 
   try {
+    // Configurações avançadas para contornar detecção
+    await page.evaluateOnNewDocument(() => {
+      // Remove propriedades que indicam automação
+      delete navigator.__proto__.webdriver;
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined,
+      });
+      
+      // Sobrescreve plugins para parecer um browser real
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => [1, 2, 3, 4, 5]
+      });
+      
+      // Sobrescreve languages
+      Object.defineProperty(navigator, 'languages', {
+        get: () => ['en-US', 'en']
+      });
+    });
+
     // Configurar headers para parecer mais com um browser real
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     await page.setViewport({ width: 1366, height: 768 });
+    
+    // Definir headers HTTP adicionais
+    await page.setExtraHTTPHeaders({
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'none',
+      'Sec-Fetch-User': '?1',
+      'Upgrade-Insecure-Requests': '1'
+    });
     
     console.log('Acessando o site...');
     // Navega para o site seats.aero e aguarda até a rede ficar inativa
@@ -41,32 +79,54 @@ const scrapeFlights = async ({ origin, destination, departureDate }) => {
       timeout: 60000 // Aumenta timeout para 60 segundos
     });
 
-    console.log('Simulando comportamento humano...');
-    // Move o mouse para simular comportamento humano e evitar detecção de bot
-    await page.mouse.move(100, 100);
-    // Aguarda 6 segundos para simular tempo de carregamento humano
-    await delay(6000);
+    console.log('Aguardando carregamento inicial...');
+    await delay(10000); // Aguarda 10 segundos para bypass do Cloudflare
 
     // Verificar se a página carregou corretamente
     const pageTitle = await page.title();
     console.log(`Título da página: ${pageTitle}`);
     
-    // Se a página não carregou corretamente, retorna erro
-    if (!pageTitle || pageTitle.includes('Access Denied') || pageTitle.includes('Blocked')) {
-      throw new Error(`Página bloqueada ou não carregou corretamente. Título: ${pageTitle}`);
+    // Se detectar Cloudflare, tentar aguardar mais tempo
+    if (pageTitle.includes('Cloudflare') || pageTitle.includes('Attention Required')) {
+      console.log('Cloudflare detectado, aguardando bypass...');
+      
+      // Tentar aguardar até 30 segundos para o Cloudflare liberar
+      for (let i = 0; i < 6; i++) {
+        await delay(5000);
+        const newTitle = await page.title();
+        console.log(`Tentativa ${i + 1}: ${newTitle}`);
+        
+        if (!newTitle.includes('Cloudflare') && !newTitle.includes('Attention Required')) {
+          console.log('Cloudflare bypassado com sucesso!');
+          break;
+        }
+        
+        if (i === 5) {
+          // Se após 30 segundos ainda estiver bloqueado, retornar erro específico
+          return { 
+            result: 'Erro: Site bloqueado pelo Cloudflare. Tente novamente em alguns minutos.' 
+          };
+        }
+      }
     }
+
+    console.log('Simulando comportamento humano...');
+    // Move o mouse para simular comportamento humano e evitar detecção de bot
+    await page.mouse.move(100, 100);
+    await delay(3000);
+    await page.mouse.move(200, 150);
+    await delay(2000);
 
     // Verifica se existe um captcha na página
     const captchaSelector = 'p#TBuuD2.h2.spacer-bottom';
     const captchaExists = await page.$(captchaSelector);
     if (captchaExists) {
       console.log('Captcha detectado. Tentando resolver...');
-      // Se encontrou captcha, procura pelo checkbox para resolver
       const checkboxSelector = 'label.cb-lb input[type="checkbox"]';
       await page.waitForSelector(checkboxSelector, { timeout: 10000 });
       await page.click(checkboxSelector);
       console.log('Captcha resolvido com sucesso.');
-      await delay(5000); // Aguarda 5 segundos após resolver o captcha
+      await delay(5000);
     }
 
     console.log('Preenchendo campo de origem...');
@@ -80,7 +140,9 @@ const scrapeFlights = async ({ origin, destination, departureDate }) => {
         'input[placeholder*="origem"]',
         'input[placeholder*="From"]',
         '.vs__search',
-        'input[type="text"]'
+        'input[type="text"]',
+        '[data-testid*="origin"]',
+        '[data-testid*="from"]'
       ];
       
       let found = false;
@@ -96,9 +158,18 @@ const scrapeFlights = async ({ origin, destination, departureDate }) => {
       }
       
       if (!found) {
-        // Debug: capturar screenshot e HTML para análise
-        const html = await page.content();
-        console.log('HTML da página:', html.substring(0, 1000));
+        // Debug: verificar se ainda estamos na página do Cloudflare
+        const currentTitle = await page.title();
+        const currentUrl = await page.url();
+        console.log(`Título atual: ${currentTitle}`);
+        console.log(`URL atual: ${currentUrl}`);
+        
+        if (currentTitle.includes('Cloudflare') || currentTitle.includes('Attention Required')) {
+          return { 
+            result: 'Erro: Não foi possível contornar o Cloudflare. Tente novamente mais tarde.' 
+          };
+        }
+        
         throw new Error('Nenhum campo de origem encontrado na página');
       }
     }
